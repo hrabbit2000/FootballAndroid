@@ -10,7 +10,12 @@ class FootballUtils {
         }
         private fun getStringValue(text: String, key: String): String {
             var regex = Regex(key + "[^\"]+")
-            //var res = text.rangeTo (regex)[0]
+            var res = regex.find(text)?.value
+            if (res == null) {
+                res = ""
+            } else {
+                res = res.split(key)[1]
+            }
             return res
         }
     }

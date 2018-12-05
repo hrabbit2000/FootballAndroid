@@ -29,6 +29,7 @@ class NetworkStuffs {
                     var session_id = response.headers["Set-Cookie"].toString()
                         .split(';')[0]
                         .split('[')[1]
+                    FuelManager.instance.baseHeaders = mapOf("Cookie" to session_id)
                     visitBookCenter(session_id)
                 }
                 is Result.Failure -> {
@@ -41,16 +42,32 @@ class NetworkStuffs {
     //
     private fun visitBookCenter(session_id: String) {
         Fuel.get(g_book_center_url)
-            .header("Cookie" to session_id)
             .responseString() {
             request, response, result ->
             when(result) {
                 is Result.Failure -> {
                 }
                 is Result.Success -> {
-                    FootballUtils.analyzeViewForm(result.get())
+                    var params = FootballUtils.analyzeViewForm(result.get())
+                    params += Pair("StadiumID", "a3915c4a-6bdc-43e6-8931-5293843fc540")
+                    params += Pair("CardType", "普通卡")
+                    visitStadiumDetail(params)
                 }
             }
         }
+    }
+
+    private fun visitStadiumDetail(params: Map<String, String>) {
+        Fuel.post(g_book_stadium_url, params.toList())
+            .responseString() {
+                request, response, result ->
+                when(result) {
+                    is Result.Failure -> {
+                    }
+                    is Result.Success -> {
+                        FootballUtils.analyzeViewForm(result.get())
+                    }
+                }
+            }
     }
 }
