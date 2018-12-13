@@ -8,6 +8,7 @@ class FootballUtils {
             var state = getStringValue(text, "\"__VIEWSTATE\" value=\"")
             return mapOf("__VIEWSTATE" to state)
         }
+
         private fun getStringValue(text: String, key: String): String {
             var regex = Regex(key + "[^\"]+")
             var res = regex.find(text)?.value
@@ -18,5 +19,6 @@ class FootballUtils {
             }
             return res
         }
+
     }
 }

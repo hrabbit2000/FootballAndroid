@@ -22,4 +22,9 @@
         <item>1</item>
         <item>2</item>
     </string-array>
+    <string-array name="available_stadiums">
+        <item>"迎园中学"</item>
+        <item>"体育场"</item>
+        <item>"南翔"</item>
+    </string-array>
 </resources>

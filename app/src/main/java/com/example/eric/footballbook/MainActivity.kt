@@ -21,6 +21,10 @@ import android.view.View
 import java.io.File
 import android.widget.ArrayAdapter
 
+import org.opencv.core.Mat
+import org.opencv.imgproc.Imgproc
+
+
 
 class BookAccount(id: String = "0", str: String = "") {
     var user: String = id
@@ -82,29 +86,39 @@ class MainActivity : AppCompatActivity() {
         date_spinner.setSelection(12)
         select_hours.setSelection(1)
         //build user selected spinner
-        var account_list: MutableList<String>? = ArrayList<String>()
-        user_accounts?.forEachIndexed { index, bookAccount ->
-            account_list?.add(bookAccount.user)
-        }
-        var adapter = ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, account_list)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        selected_user.adapter = adapter
-        selected_user.setSelection(0)
+        updateSelectedAccount()
         //
         val c = Calendar.getInstance()
-        c.set(Calendar.DATE, c.get(Calendar.DATE) + 2);
+        c.set(Calendar.DATE, c.get(Calendar.DATE) + 3);
         val year = c.get(Calendar.YEAR)
         val month = c.get(Calendar.MONTH) + 1
         val day = c.get(Calendar.DAY_OF_MONTH)
         date_text.setText("日期: " + month  + "/" + day + "/" + year)
 
         //fill init user infos
-        book_info.year = year
-        book_info.month = month
-        book_info.day = day
-        book_info.s_time = 19
+        network.infos.data += Pair("year", year)
+        network.infos.data += Pair("month", month)
+        network.infos.data += Pair("day", day)
+        network.infos.data += Pair("start", date_spinner.selectedItem.toString().toInt())
+    }
 
-        network = NetworkStuffs()
+    fun updateSelectedAccount() {
+        var selected = selected_user.selectedItemPosition
+        var account_list: MutableList<String> = ArrayList()
+        user_accounts.forEachIndexed { _, bookAccount ->
+            account_list.add(bookAccount.user)
+        }
+        var adapter = ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, account_list)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        selected_user.adapter = adapter
+        selected_user.setSelection(selected)
+    }
+
+    fun collectAllNetworkInfos(net_instance: NetworkStuffs) {
+        net_instance.infos.data += Pair("stadium", select_stadium.selectedItem.toString())
+        net_instance.infos.data += Pair("user", getSelectedAccount().user)
+        net_instance.infos.data += Pair("pwd", getSelectedAccount().pwd)
+//        net_instance.infos.data += Pair("start", )
     }
 
     fun getCurrentTimeString(): String {
@@ -113,24 +127,36 @@ class MainActivity : AppCompatActivity() {
         return current.format(formatter)
     }
 
+    fun getSelectedAccount(): BookAccount {
+        var account = BookAccount()
+        var want_user = selected_user.selectedItem.toString()
+        var it = user_accounts.iterator()
+        while (it.hasNext()) {
+            var one_account = it.next()
+            if (one_account.user == want_user) {
+                account = one_account
+                break
+            }
+        }
+
+        return account
+    }
+
     fun mainLoop() {
         time_text.text = getCurrentTimeString()
     }
 
     fun selectDateClicked(target: View) {
-        val c = Calendar.getInstance()
-        val year = c.get(Calendar.YEAR)
-        val month = c.get(Calendar.MONTH)
-        val day = c.get(Calendar.DAY_OF_MONTH)
-
-        val dpd = DatePickerDialog(this, DatePickerDialog.OnDateSetListener { view, year, monthOfYear, dayOfMonth ->
+        var year = network.infos.data.getValue("year").toString().toInt()
+        var month = network.infos.data.getValue("month").toString().toInt() - 1
+        var day = network.infos.data.getValue("day").toString().toInt()
+        val dpd = DatePickerDialog(this, DatePickerDialog.OnDateSetListener { _, new_year, new_month, new_day ->
             // Display Selected date in textbox
-            date_text.setText("日期: " + (monthOfYear + 1)  + "/" + dayOfMonth + "/" + year)
-            book_info.year = year
-            book_info.month = monthOfYear + 1
-            book_info.day = dayOfMonth
-
-            writeAccount()
+            date_text.setText("日期: " + (new_month + 1)  + "/" + new_day + "/" + new_year)
+            network.infos.data += Pair("year", new_year)
+            network.infos.data += Pair("month", new_month + 1)
+            network.infos.data += Pair("day", new_day)
+            network.infos.data += Pair("start", date_spinner.selectedItem.toString().toInt())
         }, year, month, day)
         dpd.show()
     }
@@ -142,11 +168,11 @@ class MainActivity : AppCompatActivity() {
         var need_write = true
         var need_add = true
         if (user.isNotEmpty() && pwd.isNotEmpty()) {
-            user_accounts?.forEachIndexed { index, bookAccount ->
+            user_accounts.forEachIndexed { _, bookAccount ->
                 if (bookAccount.user == user.toString()) {
-                    if (bookAccount.pwd == pwd.toString())
+                    if (bookAccount.pwd == pwd.toString()) {
                         need_write = false
-                    else {
+                    } else {
                         bookAccount.pwd = pwd.toString()
                     }
                     need_add = false
@@ -155,16 +181,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (need_add == true) {
-            user_accounts?.add(BookAccount(user.toString(), pwd.toString()))
+            user_accounts.add(BookAccount(user.toString(), pwd.toString()))
         }
 
         if (need_write == true) {
             writeAccount()
         }
+
+        updateSelectedAccount()
     }
 
     fun onTestClicked(target: View) {
-        network?.login(user_accounts?.get(0)?.user, user_accounts?.get(0)?.pwd)
+        collectAllNetworkInfos(network)
+        network.login()
     }
 
     fun  onPrepareClicked(target: View) {
@@ -175,25 +204,24 @@ class MainActivity : AppCompatActivity() {
         val file_handler = File(filesDir, account_file)
         if (file_handler.exists()) {
             var one_account = BookAccount()
-            var content = file_handler.readText()
             openFileInput(account_file).bufferedReader().readLines().forEachIndexed { index, s ->
                 if (index % 2 == 0) {
                     one_account.user = s
                 } else {
                     one_account.pwd = s
-                    user_accounts?.add(BookAccount(one_account.user, one_account.pwd))
+                    user_accounts.add(BookAccount(one_account.user, one_account.pwd))
                 }
             }
         }
 
-        if (user_accounts?.size == 0) {
-            user_accounts?.add(BookAccount("26733", "135792468fb"))
+        if (user_accounts.size == 0) {
+            user_accounts.add(BookAccount("26733", "135792468fb"))
         }
     }
 
     fun writeAccount() {
         openFileOutput(account_file, Context.MODE_PRIVATE).use {
-            user_accounts?.forEachIndexed { index, bookAccount ->
+            user_accounts.forEachIndexed { _, bookAccount ->
                 it.write((bookAccount.user + "\n").toByteArray())
                 it.write((bookAccount.pwd + "\n").toByteArray())
             }
@@ -219,6 +247,6 @@ class MainActivity : AppCompatActivity() {
     private var task: TimerTask? = null
     private var book_info = BookInfos()
     private var account_file = "myaccount"
-    private var user_accounts: MutableList<BookAccount>? = ArrayList<BookAccount>()
-    private var network: NetworkStuffs? = null
+    private var user_accounts: MutableList<BookAccount> = ArrayList()
+    private var network: NetworkStuffs = NetworkStuffs(DataCapsule())
 }
