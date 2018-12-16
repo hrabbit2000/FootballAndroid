@@ -23,6 +23,13 @@ import android.widget.ArrayAdapter
 
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
+import org.opencv.android.LoaderCallbackInterface
+import org.opencv.android.OpenCVLoader
+import org.opencv.android.BaseLoaderCallback
+
+
+
+
 
 
 
@@ -76,6 +83,29 @@ class MainActivity : AppCompatActivity() {
         return when (item.itemId) {
             R.id.action_settings -> true
             else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!OpenCVLoader.initDebug()) {
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_2_0, this, mLoaderCallback)
+        } else {
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS)
+        }
+    }
+
+    private val mLoaderCallback = object : BaseLoaderCallback(this) {
+
+        override fun onManagerConnected(status: Int) {
+            when (status) {
+                BaseLoaderCallback.SUCCESS -> {
+                    println()
+                }
+                else -> {
+                    super.onManagerConnected(status)
+                }
+            }
         }
     }
 
@@ -144,6 +174,7 @@ class MainActivity : AppCompatActivity() {
 
     fun mainLoop() {
         time_text.text = getCurrentTimeString()
+        network.update()
     }
 
     fun selectDateClicked(target: View) {
@@ -193,7 +224,7 @@ class MainActivity : AppCompatActivity() {
 
     fun onTestClicked(target: View) {
         collectAllNetworkInfos(network)
-        network.login()
+        network.start()
     }
 
     fun  onPrepareClicked(target: View) {

@@ -139,8 +139,8 @@
             app:layout_constraintVertical_bias="0.303"/>
     <TextView
             android:text="日志"
-            android:layout_width="367dp"
-            android:layout_height="288dp"
+            android:layout_width="366dp"
+            android:layout_height="275dp"
             android:id="@+id/log_view" android:layout_marginTop="8dp"
             android:layout_marginBottom="8dp"
             app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent"

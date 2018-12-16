@@ -1,10 +1,12 @@
 package com.example.eric.footballbook
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.media.Image
+import android.widget.ImageView
 import com.github.kittinunf.fuel.Fuel
 import com.github.kittinunf.fuel.core.FuelManager
-import com.github.kittinunf.fuel.httpGet
-import com.github.kittinunf.fuel.httpPost
-import com.github.kittinunf.fuel.util.FuelRouting
 import com.github.kittinunf.result.Result
 import java.io.File
 import java.net.URLEncoder
@@ -31,6 +33,75 @@ class NetworkStuffs {
         "南翔" to Pair("666a18fd-ac6e-40a7-9322-e6b54f46cedb", "73a96bbe-4e4c-43af-af65-6b0fd2efee77")
     )
 
+    enum class ProcessorState {
+        ELogin, EPrepare, EVerifyCode, EBooking, EFinish
+    }
+
+    enum class ActionState {
+        ETrying, EFailed, ESuccess
+    }
+
+    var porc_state = ProcessorState.EFinish
+    var action_state = ActionState.EFailed
+
+    ///////////////////////////////////////////////////////////////
+    // processor control
+
+    fun start() {
+        porc_state = ProcessorState.ELogin
+    }
+
+    fun cancel() {
+        porc_state = ProcessorState.EFinish
+        action_state = ActionState.EFailed
+    }
+
+    fun update() {
+        when(porc_state) {
+            ProcessorState.ELogin -> {
+                when (action_state) {
+                    ActionState.EFailed -> {
+                        login()
+                        action_state = ActionState.ETrying
+                    }
+                    ActionState.ESuccess -> {
+                        porc_state = ProcessorState.EPrepare
+                        action_state = ActionState.EFailed
+                    }
+                }
+            }
+            ProcessorState.EPrepare -> {
+                when (action_state) {
+                    ActionState.EFailed -> {
+                        visitBookCenter()
+                        action_state = ActionState.ETrying
+                    }
+                    ActionState.ESuccess -> {
+                        porc_state = ProcessorState.EVerifyCode
+                        action_state = ActionState.EFailed
+                    }
+                }
+            }
+            ProcessorState.EVerifyCode -> {
+                when (action_state) {
+                    ActionState.EFailed -> {
+                        confirmVerifyCode()
+                        action_state = ActionState.ETrying
+                    }
+                    ActionState.ESuccess -> {
+                        //next step
+                        porc_state = ProcessorState.EFinish
+                        setActionState(ActionState.EFailed)
+                    }
+                }
+            }
+        }
+    }
+
+    fun setActionState(state: ActionState) {
+        action_state = state
+    }
+
     ///////////////////////////////////////////////////////////////
     // login function
     fun login() {
@@ -44,9 +115,10 @@ class NetworkStuffs {
                         .split(';')[0]
                         .split('[')[1]
                     FuelManager.instance.baseHeaders = mapOf("Cookie" to session_id)
-                    visitBookCenter()
+                    setActionState(ActionState.ESuccess)
                 }
                 is Result.Failure -> {
+                    setActionState(ActionState.EFailed)
 //                    val ex = result.getException()
                 }
             }
@@ -57,77 +129,90 @@ class NetworkStuffs {
     private fun visitBookCenter() {
         Fuel.get(g_book_center_url)
             .responseString() {
-            _, _, result ->
-            when(result) {
-                is Result.Failure -> {
-                }
-                is Result.Success -> {
-                    var stadium = infos.data.getValue("stadium").toString()
-                    var params = FootballUtils.analyzeViewForm(result.get())
-                    params += Pair("StadiumID", g_stadium_infos.getValue(stadium).first)
-                    params += Pair("CardType", "普通卡")
-                    visitStadiumDetail(params)
+                    _, _, result ->
+                when(result) {
+                    is Result.Failure -> {
+                        FuelManager.instance.baseParams = listOf()
+                        setActionState(ActionState.EFailed)
+                    }
+                    is Result.Success -> {
+                        var view_state = FootballUtils.analyzeViewForm(result.get())
+                        FuelManager.instance.baseParams = view_state.toList()
+                        visitStadiumDetail()
+                    }
                 }
             }
-        }
     }
 
-    private fun visitStadiumDetail(params: Map<String, String>) {
+    private fun visitStadiumDetail() {
+        //prepare parameters
+        var stadium = infos.data.getValue("stadium").toString()
+        var params = mapOf("StadiumID" to g_stadium_infos.getValue(stadium).first)
+        params += Pair("CardType", "普通卡")
+        //
         Fuel.post(g_book_stadium_url, params.toList())
             .responseString {
                 _, _, result ->
                 when(result) {
                     is Result.Failure -> {
+                        FuelManager.instance.baseParams = listOf()
+                        setActionState(ActionState.EFailed)
                     }
                     is Result.Success -> {
-                        var new_params = FootballUtils.analyzeViewForm(result.get())
-                        var start = infos.data.getValue("year").toString() + "-" +
-                                    infos.data.getValue("month").toString() + "-" +
-                                    infos.data.getValue("day").toString() + " " +
-                                    infos.data.getValue("start").toString() + ":00"
-                        new_params += Pair("ApplyTime", start)
-                        var stadium = infos.data.getValue("stadium").toString()
-                        new_params += Pair("AreaID", g_stadium_infos.getValue(stadium).second)
-                        confirmStartTime(new_params)
+                        var view_state = FootballUtils.analyzeViewForm(result.get())
+                        FuelManager.instance.baseParams = view_state.toList()
+                        confirmStartTime()
                     }
                 }
             }
     }
 
-    private fun confirmStartTime(params: Map<String, String>) {
+    private fun confirmStartTime() {
+        //prepare parameters
+        var start = infos.data.getValue("year").toString() + "-" +
+                    infos.data.getValue("month").toString() + "-" +
+                    infos.data.getValue("day").toString() + " " +
+                    infos.data.getValue("start").toString() + ":00"
+        var params = mapOf("ApplyTime" to start)
+        var stadium = infos.data.getValue("stadium").toString()
+        params += Pair("AreaID", g_stadium_infos.getValue(stadium).second)
+        //do something tricky
         var body = queryFromParameters(params.toList())
         body = body.replace("+", "%20")
+        //
         Fuel.post(g_book_url)
             .body(body)
             .responseString { _, _, result ->
                 when(result) {
                     is Result.Failure -> {
+                        FuelManager.instance.baseParams = listOf()
+                        setActionState(ActionState.EFailed)
                     }
                     is Result.Success -> {
-                        var new_params = FootballUtils.analyzeViewForm(result.get())
-                        confirmVerifyCode()
+                        var view_state = FootballUtils.analyzeViewForm(result.get())
+                        FuelManager.instance.baseParams = view_state.toList()
+                        setActionState(ActionState.ESuccess)
                     }
                 }
         }
     }
 
     private fun confirmVerifyCode() {
-//        Fuel.download(g_book_image_url)
-//            .destination {
-//                _, _ ->
-//                File.createTempFile("football_img", ".jpg")
-//            }.response {
-//                _, _, res ->
-//                var ss = res.get()
-//            }
-        Fuel.get(g_book_image_url)
-            .response {
+        var file_to_save = File.createTempFile("football_img", ".jpg")
+        Fuel.download(g_book_image_url)
+            .destination {
+                _, _ ->
+                file_to_save
+            }.response {
                 _, _, result ->
                 when(result) {
                     is Result.Failure -> {
+                        setActionState(ActionState.EFailed)
                     }
                     is Result.Success -> {
-                        var dd = result.get()
+                        var img = BitmapFactory.decodeFile(file_to_save.absolutePath)
+                        var code = ImageDecode.decodeImageToCode(img)
+                        setActionState(ActionState.ESuccess)
                     }
                 }
             }
